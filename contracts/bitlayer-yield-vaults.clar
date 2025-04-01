@@ -463,3 +463,70 @@
     )
   )
 )
+
+;; Compound rewards for a user (can be called by user or contract owner)
+(define-public (compound-rewards (user principal) (strategy-id uint))
+  (let (
+    (current-time (get-current-time))
+    (user-balance (default-to u0 (map-get? user-balances { user: user, strategy: strategy-id })))
+  )
+    ;; Ensure user has a balance
+    (asserts! (> user-balance u0) (err err-insufficient-balance))
+    
+    ;; Get user strategy info and strategy info
+    (match (map-get? user-strategy-info { user: user, strategy: strategy-id })
+      user-info
+        (match (map-get? strategies { strategy-id: strategy-id })
+          strategy-info
+            (let (
+              (last-compound (get last-compound user-info))
+              (time-since-compound (- current-time last-compound))
+              (apy-bps (get current-apy strategy-info))
+              (performance-fee-bps (get performance-fee strategy-info))
+              
+              ;; Calculate rewards
+              (rewards (calculate-rewards user-balance apy-bps time-since-compound))
+              (fee-amount (calculate-fee rewards performance-fee-bps))
+              (net-rewards (- rewards fee-amount))
+              
+              ;; Update balances
+              (new-user-balance (+ user-balance net-rewards))
+              (new-strategy-tvl (+ (get tvl strategy-info) rewards))
+            )
+              ;; Only compound if significant time has passed and rewards are positive
+              (if (and (> time-since-compound u3600) (> rewards u0))
+                (begin
+                  ;; Update user balance
+                  (map-set user-balances { user: user, strategy: strategy-id } new-user-balance)
+                  
+                  ;; Update user's last compound time
+                  (map-set user-strategy-info { user: user, strategy: strategy-id }
+                    (merge user-info { last-compound: current-time })
+                  )
+                  
+                  ;; Update strategy TVL
+                  (map-set strategies { strategy-id: strategy-id }
+                    (merge strategy-info { tvl: new-strategy-tvl })
+                  )
+                  
+                  ;; Update total TVL
+                  (var-set total-tvl (+ (var-get total-tvl) rewards))
+                  
+                  ;; Add fee to treasury
+                  (var-set treasury-balance (+ (var-get treasury-balance) fee-amount))
+                  
+                  ;; Increment total compounds
+                  (var-set total-compounds (+ (var-get total-compounds) u1))
+                  
+                  ;; Return success with new balance
+                  (ok new-user-balance)
+                )
+                (ok user-balance) ;; Return current balance if no compounding needed
+              )
+            )
+          (err err-not-found)
+        )
+      (err err-not-found)
+    )
+  )
+)
