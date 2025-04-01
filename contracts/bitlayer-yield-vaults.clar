@@ -292,3 +292,50 @@
     u0
   ))
 )
+
+;; Calculate rewards based on APY, time held and amount
+(define-private (calculate-rewards (amount uint) (apy-bps uint) (time-held uint))
+  ;; Convert time-held from seconds to years (approximated)
+  (let (
+    (seconds-per-year u31536000)
+    (years-held (/ time-held seconds-per-year))
+    (decimal-apy (/ apy-bps u10000))
+  )
+  ;; Simple interest calculation - in a real implementation, compound interest would be better
+  (* amount (/ (* decimal-apy years-held) u1000000))
+  )
+)
+
+;; Update strategy APY based on protocol allocations
+(define-private (update-strategy-apy (strategy-id uint))
+  (match (map-get? strategies { strategy-id: strategy-id })
+    strategy-info 
+      (let (
+        (allocations (get protocol-allocations strategy-info))
+        (total-weighted-apy u0)
+      )
+      ;; Calculate weighted average APY
+      (map-set strategies { strategy-id: strategy-id }
+        (merge strategy-info {
+          current-apy: (fold calculate-weighted-apy allocations u0)
+        })
+      ))
+    (err err-not-found)
+  )
+)
+
+;; Helper function to calculate weighted APY for fold operation
+(define-private (calculate-weighted-apy (allocation { protocol-id: uint, allocation: uint }) (total-so-far uint))
+  (if (is-eq (get allocation allocation) u0)
+    total-so-far
+    (let (
+      (protocol-id (get protocol-id allocation))
+      (allocation-pct (get allocation allocation))
+    )
+    (match (map-get? protocol-info { protocol-id: protocol-id })
+      protocol
+        (+ total-so-far (/ (* (get current-apy protocol) allocation-pct) u100))
+      total-so-far
+    ))
+  )
+)
