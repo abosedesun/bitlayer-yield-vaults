@@ -530,3 +530,80 @@
     )
   )
 )
+
+;; Rebalance allocations for a strategy
+;; In a real implementation, this would interact with external protocols
+(define-public (rebalance-strategy (strategy-id uint))
+  (begin
+    ;; Only owner can rebalance
+    (asserts! (is-contract-owner) (err err-owner-only))
+    
+    ;; Check strategy exists
+    (asserts! (is-strategy-active strategy-id) (err err-not-found))
+    
+    ;; Update strategy APY
+    (try! (update-strategy-apy strategy-id))
+    
+    ;; Update last rebalance time
+    (var-set last-rebalance (get-current-time))
+    
+    (ok true)
+  )
+)
+
+;; Update protocol APY (in a real implementation, this would use oracles)
+(define-public (update-protocol-apy (protocol-id uint) (new-apy uint))
+  (begin
+    ;; Only owner can update APYs
+    (asserts! (is-contract-owner) (err err-owner-only))
+    
+    ;; Update protocol APY
+    (match (map-get? protocol-info { protocol-id: protocol-id })
+      protocol
+        (map-set protocol-info { protocol-id: protocol-id }
+          (merge protocol {
+            current-apy: new-apy,
+            last-updated: (get-current-time)
+          })
+        )
+      (err err-protocol-not-supported)
+    )
+    
+    ;; Update all strategy APYs
+    (update-all-strategy-apys)
+    
+    (ok true)
+  )
+)
+
+;; Helper to update all strategy APYs
+(define-private (update-all-strategy-apys)
+  (begin
+    (update-strategy-apy CONSERVATIVE)
+    (update-strategy-apy BALANCED)
+    (update-strategy-apy GROWTH)
+    (ok true)
+  )
+)
+
+;; Emergency withdrawal function (can only be called by contract owner)
+(define-public (activate-emergency-mode (strategy-id uint))
+  (begin
+    ;; Only owner can activate emergency mode
+    (asserts! (is-contract-owner) (err err-owner-only))
+    
+    ;; Check strategy exists
+    (asserts! (is-strategy-active strategy-id) (err err-not-found))
+    
+    ;; Set emergency mode
+    (match (map-get? strategies { strategy-id: strategy-id })
+      strategy-info
+        (map-set strategies { strategy-id: strategy-id }
+          (merge strategy-info { emergency-mode: true, deposit-enabled: false })
+        )
+      (err err-not-found)
+    )
+    
+    (ok true)
+  )
+)
