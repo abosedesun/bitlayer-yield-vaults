@@ -607,3 +607,75 @@
     (ok true)
   )
 )
+
+;; Check if emergency withdrawal is needed based on user settings
+(define-public (check-emergency-conditions (user principal) (strategy-id uint))
+  (let (
+    (user-balance (default-to u0 (map-get? user-balances { user: user, strategy: strategy-id })))
+  )
+    ;; Ensure user has a balance
+    (asserts! (> user-balance u0) (err err-insufficient-balance))
+    
+    ;; Get user strategy info and strategy info
+    (match (map-get? user-strategy-info { user: user, strategy: strategy-id })
+      user-info
+        (match (map-get? strategies { strategy-id: strategy-id })
+          strategy-info
+            (let (
+              (emergency-threshold (get emergency-threshold user-info))
+              (current-apy (get current-apy strategy-info))
+            )
+              ;; Check if APY is below emergency threshold
+              (if (< current-apy emergency-threshold)
+                (withdraw-all strategy-id) ;; Execute emergency withdrawal
+                (ok false) ;; No emergency needed
+              )
+            )
+          (err err-not-found)
+        )
+      (err err-not-found)
+    )
+  )
+)
+
+;; Set user's emergency threshold
+(define-public (set-emergency-threshold (strategy-id uint) (threshold uint))
+  (let (
+    (user-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+  )
+    ;; Ensure user has a balance
+    (asserts! (> user-balance u0) (err err-insufficient-balance))
+    
+    ;; Get user strategy info
+    (match (map-get? user-strategy-info { user: tx-sender, strategy: strategy-id })
+      user-info
+        (map-set user-strategy-info { user: tx-sender, strategy: strategy-id }
+          (merge user-info { emergency-threshold: threshold })
+        )
+      (err err-not-found)
+    )
+    
+    (ok true)
+  )
+)
+
+;; Set user's compounding rate
+(define-public (set-compounding-rate (strategy-id uint) (hours uint))
+  (let (
+    (user-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+  )
+    ;; Ensure user has a balance
+    (asserts! (> user-balance u0) (err err-insufficient-balance))
+    
+    ;; Get user strategy info
+    (match (map-get? user-strategy-info { user: tx-sender, strategy: strategy-id })
+      user-info
+        (map-set user-strategy-info { user: tx-sender, strategy: strategy-id }
+          (merge user-info { compounding-rate: hours })
+        )
+      (err err-not-found)
+    )
+    
+    (ok true)
+  )
+)
