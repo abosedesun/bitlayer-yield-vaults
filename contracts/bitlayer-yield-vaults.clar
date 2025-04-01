@@ -99,3 +99,55 @@
     last-updated: uint
   }
 )
+
+;; Track total vault statistics
+(define-data-var total-tvl uint u0)
+(define-data-var total-users uint u0)
+(define-data-var total-protocols uint u4) ;; Initially supporting 4 protocols
+(define-data-var total-compounds uint u0)
+(define-data-var treasury-balance uint u0)
+(define-data-var emergency-fund uint u0)
+(define-data-var last-rebalance uint u0) ;; timestamp
+
+;; Initialize protocols with default values
+(define-private (initialize-protocols)
+  (begin
+    (map-set protocol-info { protocol-id: PROTOCOL-STACKSWAP }
+      { 
+        name: "Stackswap", 
+        contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
+        current-apy: u500, ;; 5%
+        active: true,
+        last-updated: (get-block-info? time u0)
+      }
+    )
+    (map-set protocol-info { protocol-id: PROTOCOL-ARKADIKO }
+      { 
+        name: "Arkadiko", 
+        contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
+        current-apy: u700, ;; 7%
+        active: true,
+        last-updated: (get-block-info? time u0)
+      }
+    )
+    (map-set protocol-info { protocol-id: PROTOCOL-ALEX }
+      { 
+        name: "ALEX", 
+        contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
+        current-apy: u900, ;; 9%
+        active: true,
+        last-updated: (get-block-info? time u0)
+      }
+    )
+    (map-set protocol-info { protocol-id: PROTOCOL-ZEST }
+      { 
+        name: "Zest", 
+        contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
+        current-apy: u800, ;; 8%
+        active: true,
+        last-updated: (get-block-info? time u0)
+      }
+    )
+    (ok true)
+  )
+)
