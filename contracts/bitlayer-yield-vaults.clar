@@ -118,7 +118,7 @@
         contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
         current-apy: u500, ;; 5%
         active: true,
-        last-updated: (get-block-info? time u0)
+        last-updated: stacks-block-height
       }
     )
     (map-set protocol-info { protocol-id: PROTOCOL-ARKADIKO }
@@ -127,7 +127,7 @@
         contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
         current-apy: u700, ;; 7%
         active: true,
-        last-updated: (get-block-info? time u0)
+        last-updated: stacks-block-height
       }
     )
     (map-set protocol-info { protocol-id: PROTOCOL-ALEX }
@@ -136,7 +136,7 @@
         contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
         current-apy: u900, ;; 9%
         active: true,
-        last-updated: (get-block-info? time u0)
+        last-updated: stacks-block-height
       }
     )
     (map-set protocol-info { protocol-id: PROTOCOL-ZEST }
@@ -145,10 +145,10 @@
         contract-address: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM,
         current-apy: u800, ;; 8%
         active: true,
-        last-updated: (get-block-info? time u0)
+        last-updated: stacks-block-height
       }
     )
-    (ok true)
+    (ok true)  ;; Return a response type instead of boolean
   )
 )
 
@@ -244,21 +244,21 @@
         emergency-mode: false
       }
     )
-    (ok true)
+    (ok true)  ;; Return a response type instead of boolean
   )
 )
 
 ;; Initialize contract on deploy
 (begin
-  (try! (initialize-protocols))
-  (try! (initialize-strategies))
+  (unwrap-panic (initialize-protocols))
+  (unwrap-panic (initialize-strategies))
 )
 
 ;; Helper functions
 
 ;; Get current timestamp
 (define-private (get-current-time)
-  (default-to u0 (get-block-info? time u0))
+  stacks-block-height
 )
 
 ;; Check if caller is contract owner
@@ -314,12 +314,16 @@
         (allocations (get protocol-allocations strategy-info))
         (total-weighted-apy u0)
       )
-      ;; Calculate weighted average APY
-      (map-set strategies { strategy-id: strategy-id }
-        (merge strategy-info {
-          current-apy: (fold calculate-weighted-apy allocations u0)
-        })
-      ))
+        (begin
+          ;; Calculate weighted average APY
+          (map-set strategies { strategy-id: strategy-id }
+            (merge strategy-info {
+              current-apy: (fold calculate-weighted-apy allocations u0)
+            })
+          )
+          (ok true)
+        )
+      )
     (err err-not-found)
   )
 )
@@ -362,45 +366,47 @@
           ;; Check if strategy is locked
           (asserts! (<= (get locked-until strategy-info) burn-block-height) (err err-strategy-locked))
           
-          ;; Transfer STX from user to contract
-          (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-          
-          ;; Update user balance
-          (let (
-            (current-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
-            (new-balance (+ current-balance amount))
-            (strategy-tvl (+ (get tvl strategy-info) amount))
-          )
-            ;; Set default user strategy info if first deposit
-            (if (is-eq current-balance u0)
-              (begin
-                (map-set user-strategy-info { user: tx-sender, strategy: strategy-id }
-                  {
-                    deposit-time: current-time,
-                    last-compound: current-time,
-                    compounding-rate: u24, ;; Default to 24 hours
-                    emergency-threshold: u300 ;; Default to 3% minimum APY
-                  }
-                )
-                ;; Increment total users if this is their first deposit
-                (var-set total-users (+ (var-get total-users) u1))
+          ;; Transfer STX from user to contract - Using match instead of try!
+          (match (stx-transfer? amount tx-sender (as-contract tx-sender))
+            success-response
+              ;; Update user balance
+              (let (
+                (current-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+                (new-balance (+ current-balance amount))
+                (strategy-tvl (+ (get tvl strategy-info) amount))
               )
-              true
-            )
-            
-            ;; Update user balance
-            (map-set user-balances { user: tx-sender, strategy: strategy-id } new-balance)
-            
-            ;; Update strategy TVL
-            (map-set strategies { strategy-id: strategy-id }
-              (merge strategy-info { tvl: strategy-tvl })
-            )
-            
-            ;; Update total TVL
-            (var-set total-tvl (+ (var-get total-tvl) amount))
-            
-            ;; Return success with updated balance
-            (ok new-balance)
+                ;; Set default user strategy info if first deposit
+                (if (is-eq current-balance u0)
+                  (begin
+                    (map-set user-strategy-info { user: tx-sender, strategy: strategy-id }
+                      {
+                        deposit-time: current-time,
+                        last-compound: current-time,
+                        compounding-rate: u24, ;; Default to 24 hours
+                        emergency-threshold: u300 ;; Default to 3% minimum APY
+                      }
+                    )
+                    ;; Increment total users if this is their first deposit
+                    (var-set total-users (+ (var-get total-users) u1))
+                  )
+                  true
+                )
+                
+                ;; Update user balance
+                (map-set user-balances { user: tx-sender, strategy: strategy-id } new-balance)
+                
+                ;; Update strategy TVL
+                (map-set strategies { strategy-id: strategy-id }
+                  (merge strategy-info { tvl: strategy-tvl })
+                )
+                
+                ;; Update total TVL
+                (var-set total-tvl (+ (var-get total-tvl) amount))
+                
+                ;; Return success with updated balance
+                (ok new-balance)
+              )
+            error-response (err err-unauthorized)  ;; Or another appropriate error
           )
         )
       (err err-not-found)
@@ -441,11 +447,11 @@
           ;; Add fee to treasury
           (var-set treasury-balance (+ (var-get treasury-balance) fee-amount))
           
-          ;; Transfer STX to user
-          (as-contract (stx-transfer? net-amount tx-sender tx-sender))
-          
-          ;; Return success with withdrawal amount
-          (ok net-amount)
+          ;; Transfer STX to user - properly handle response with match
+          (match (as-contract (stx-transfer? net-amount tx-sender tx-sender))
+            success-response (ok net-amount)
+            error-response (err err-unauthorized)  ;; Or another appropriate error
+          )
         )
       (err err-not-found)
     )
@@ -557,31 +563,31 @@
     ;; Only owner can update APYs
     (asserts! (is-contract-owner) (err err-owner-only))
     
-    ;; Update protocol APY
+    ;; Update protocol APY with proper response handling
     (match (map-get? protocol-info { protocol-id: protocol-id })
       protocol
-        (map-set protocol-info { protocol-id: protocol-id }
-          (merge protocol {
-            current-apy: new-apy,
-            last-updated: (get-current-time)
-          })
+        (begin
+          (map-set protocol-info { protocol-id: protocol-id } 
+            (merge protocol {
+              current-apy: new-apy,
+              last-updated: (get-current-time)
+            }))
+          ;; Update all strategy APYs
+          (try! (update-all-strategy-apys))
+          (ok true)
         )
+      ;; Return error if protocol not found
       (err err-protocol-not-supported)
     )
-    
-    ;; Update all strategy APYs
-    (update-all-strategy-apys)
-    
-    (ok true)
   )
 )
 
 ;; Helper to update all strategy APYs
 (define-private (update-all-strategy-apys)
   (begin
-    (update-strategy-apy CONSERVATIVE)
-    (update-strategy-apy BALANCED)
-    (update-strategy-apy GROWTH)
+    (try! (update-strategy-apy CONSERVATIVE))
+    (try! (update-strategy-apy BALANCED))
+    (try! (update-strategy-apy GROWTH))
     (ok true)
   )
 )
@@ -767,12 +773,15 @@
 ;; Add funds to emergency fund
 (define-public (add-to-emergency-fund (amount uint))
   (begin
-    ;; Transfer STX to contract
-    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
-    
-    ;; Update emergency fund balance
-    (var-set emergency-fund (+ (var-get emergency-fund) amount))
-    
-    (ok true)
+    ;; Transfer STX to contract - Using match instead of try!
+    (match (stx-transfer? amount tx-sender (as-contract tx-sender))
+      success-response
+        (begin
+          ;; Update emergency fund balance
+          (var-set emergency-fund (+ (var-get emergency-fund) amount))
+          (ok true)
+        )
+      error-response (err err-unauthorized)  ;; Or another appropriate error
+    )
   )
 )
