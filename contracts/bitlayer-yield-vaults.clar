@@ -247,3 +247,48 @@
     (ok true)
   )
 )
+
+;; Initialize contract on deploy
+(begin
+  (try! (initialize-protocols))
+  (try! (initialize-strategies))
+)
+
+;; Helper functions
+
+;; Get current timestamp
+(define-private (get-current-time)
+  (default-to u0 (get-block-info? time u0))
+)
+
+;; Check if caller is contract owner
+(define-private (is-contract-owner)
+  (is-eq tx-sender contract-owner)
+)
+
+;; Check if a strategy exists and is active
+(define-private (is-strategy-active (strategy-id uint))
+  (match (map-get? strategies { strategy-id: strategy-id })
+    strategy-info (get active strategy-info)
+    false
+  )
+)
+
+;; Calculate fee amount
+(define-private (calculate-fee (amount uint) (fee-bps uint))
+  (/ (* amount fee-bps) u10000)
+)
+
+;; Calculate user's share percentage in a strategy (in basis points)
+(define-private (calculate-user-share (user principal) (strategy-id uint))
+  (let (
+    (user-balance (default-to u0 (map-get? user-balances { user: user, strategy: strategy-id })))
+    (strategy-tvl (match (map-get? strategies { strategy-id: strategy-id })
+                    strategy (get tvl strategy)
+                    u0))
+  )
+  (if (> strategy-tvl u0)
+    (/ (* user-balance u10000) strategy-tvl)
+    u0
+  ))
+)
