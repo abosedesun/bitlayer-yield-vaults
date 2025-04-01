@@ -151,3 +151,99 @@
     (ok true)
   )
 )
+
+;; Initialize strategies with default configurations
+(define-private (initialize-strategies)
+  (begin
+    ;; Conservative Strategy
+    (map-set strategies { strategy-id: CONSERVATIVE }
+      {
+        name: "Conservative Vault",
+        description: "Stablecoin pools with insured lending positions for lower risk",
+        risk-level: CONSERVATIVE,
+        active: true,
+        tvl: u0,
+        current-apy: u650, ;; 6.5%
+        protocol-allocations: (list 
+          { protocol-id: PROTOCOL-ZEST, allocation: u50 }
+          { protocol-id: PROTOCOL-ARKADIKO, allocation: u50 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+        ),
+        min-deposit: u1000000, ;; 1 STX minimum
+        locked-until: u0,
+        deposit-enabled: true,
+        withdrawal-fee: u50, ;; 0.5%
+        performance-fee: u1000, ;; 10%
+        emergency-mode: false
+      }
+    )
+    
+    ;; Balanced Strategy
+    (map-set strategies { strategy-id: BALANCED }
+      {
+        name: "Balanced Vault",
+        description: "BTC/STX LP positions and leveraged staking for moderate risk",
+        risk-level: BALANCED,
+        active: true,
+        tvl: u0,
+        current-apy: u1200, ;; 12%
+        protocol-allocations: (list 
+          { protocol-id: PROTOCOL-STACKSWAP, allocation: u40 }
+          { protocol-id: PROTOCOL-ALEX, allocation: u40 }
+          { protocol-id: PROTOCOL-ARKADIKO, allocation: u20 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+        ),
+        min-deposit: u10000000, ;; 10 STX minimum
+        locked-until: u0,
+        deposit-enabled: true,
+        withdrawal-fee: u100, ;; 1%
+        performance-fee: u1500, ;; 15%
+        emergency-mode: false
+      }
+    )
+    
+    ;; Growth Strategy
+    (map-set strategies { strategy-id: GROWTH }
+      {
+        name: "Growth Vault",
+        description: "High APY farming on new protocols with dynamic exit strategies",
+        risk-level: GROWTH,
+        active: true,
+        tvl: u0,
+        current-apy: u2000, ;; 20%
+        protocol-allocations: (list 
+          { protocol-id: PROTOCOL-ALEX, allocation: u60 }
+          { protocol-id: PROTOCOL-STACKSWAP, allocation: u40 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+          { protocol-id: u0, allocation: u0 }
+        ),
+        min-deposit: u50000000, ;; 50 STX minimum
+        locked-until: u0,
+        deposit-enabled: true,
+        withdrawal-fee: u200, ;; 2%
+        performance-fee: u2000, ;; 20%
+        emergency-mode: false
+      }
+    )
+    (ok true)
+  )
+)
