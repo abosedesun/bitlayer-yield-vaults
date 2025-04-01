@@ -339,3 +339,71 @@
     ))
   )
 )
+
+;; Core contract functions
+
+;; Deposit funds into a strategy
+(define-public (deposit (strategy-id uint) (amount uint))
+  (let (
+    (current-time (get-current-time))
+  )
+    ;; Check strategy exists and is active
+    (asserts! (is-strategy-active strategy-id) (err err-not-found))
+    
+    ;; Get strategy info
+    (match (map-get? strategies { strategy-id: strategy-id })
+      strategy-info
+        (begin
+          ;; Check conditions
+          (asserts! (get deposit-enabled strategy-info) (err err-deposit-disabled))
+          (asserts! (not (get emergency-mode strategy-info)) (err err-emergency-active))
+          (asserts! (>= amount (get min-deposit strategy-info)) (err err-minimum-not-met))
+          
+          ;; Check if strategy is locked
+          (asserts! (<= (get locked-until strategy-info) burn-block-height) (err err-strategy-locked))
+          
+          ;; Transfer STX from user to contract
+          (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+          
+          ;; Update user balance
+          (let (
+            (current-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+            (new-balance (+ current-balance amount))
+            (strategy-tvl (+ (get tvl strategy-info) amount))
+          )
+            ;; Set default user strategy info if first deposit
+            (if (is-eq current-balance u0)
+              (begin
+                (map-set user-strategy-info { user: tx-sender, strategy: strategy-id }
+                  {
+                    deposit-time: current-time,
+                    last-compound: current-time,
+                    compounding-rate: u24, ;; Default to 24 hours
+                    emergency-threshold: u300 ;; Default to 3% minimum APY
+                  }
+                )
+                ;; Increment total users if this is their first deposit
+                (var-set total-users (+ (var-get total-users) u1))
+              )
+              true
+            )
+            
+            ;; Update user balance
+            (map-set user-balances { user: tx-sender, strategy: strategy-id } new-balance)
+            
+            ;; Update strategy TVL
+            (map-set strategies { strategy-id: strategy-id }
+              (merge strategy-info { tvl: strategy-tvl })
+            )
+            
+            ;; Update total TVL
+            (var-set total-tvl (+ (var-get total-tvl) amount))
+            
+            ;; Return success with updated balance
+            (ok new-balance)
+          )
+        )
+      (err err-not-found)
+    )
+  )
+)
