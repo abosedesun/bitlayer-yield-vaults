@@ -679,3 +679,100 @@
     (ok true)
   )
 )
+
+;; Administrative functions
+
+;; Update strategy allocations
+(define-public (update-strategy-allocations (strategy-id uint) (allocations (list 10 { protocol-id: uint, allocation: uint })))
+  (begin
+    ;; Only owner can update allocations
+    (asserts! (is-contract-owner) (err err-owner-only))
+    
+    ;; Check allocations add up to 100%
+    (asserts! (is-eq (fold add-allocations allocations u0) u100) (err err-invalid-amount))
+    
+    ;; Update strategy allocations
+    (match (map-get? strategies { strategy-id: strategy-id })
+      strategy-info
+        (map-set strategies { strategy-id: strategy-id }
+          (merge strategy-info { protocol-allocations: allocations })
+        )
+      (err err-not-found)
+    )
+    
+    ;; Update strategy APY
+    (update-strategy-apy strategy-id)
+    
+    (ok true)
+  )
+)
+
+;; Helper function to add up allocations for validation
+(define-private (add-allocations (allocation { protocol-id: uint, allocation: uint }) (total-so-far uint))
+  (+ total-so-far (get allocation allocation))
+)
+
+;; Get user's balance in a strategy
+(define-read-only (get-user-balance (user principal) (strategy-id uint))
+  (default-to u0 (map-get? user-balances { user: user, strategy: strategy-id }))
+)
+
+;; Get strategy information
+(define-read-only (get-strategy-info (strategy-id uint))
+  (map-get? strategies { strategy-id: strategy-id })
+)
+
+;; Get protocol information
+(define-read-only (get-protocol-info (protocol-id uint))
+  (map-get? protocol-info { protocol-id: protocol-id })
+)
+
+;; Get total TVL across all strategies
+(define-read-only (get-total-tvl)
+  (var-get total-tvl)
+)
+
+;; Get user's strategy settings
+(define-read-only (get-user-strategy-settings (user principal) (strategy-id uint))
+  (map-get? user-strategy-info { user: user, strategy: strategy-id })
+)
+
+;; Get projected APY for a user in a strategy
+(define-read-only (get-projected-user-apy (user principal) (strategy-id uint))
+  (match (map-get? strategies { strategy-id: strategy-id })
+    strategy-info (get current-apy strategy-info)
+    u0
+  )
+)
+
+;; Withdraw funds from treasury (only owner)
+(define-public (withdraw-treasury (amount uint) (recipient principal))
+  (begin
+    ;; Only owner can withdraw from treasury
+    (asserts! (is-contract-owner) (err err-owner-only))
+    
+    ;; Check sufficient treasury balance
+    (asserts! (>= (var-get treasury-balance) amount) (err err-insufficient-balance))
+    
+    ;; Update treasury balance
+    (var-set treasury-balance (- (var-get treasury-balance) amount))
+    
+    ;; Transfer STX to recipient
+    (as-contract (stx-transfer? amount tx-sender recipient))
+    
+    (ok true)
+  )
+)
+
+;; Add funds to emergency fund
+(define-public (add-to-emergency-fund (amount uint))
+  (begin
+    ;; Transfer STX to contract
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    
+    ;; Update emergency fund balance
+    (var-set emergency-fund (+ (var-get emergency-fund) amount))
+    
+    (ok true)
+  )
+)
