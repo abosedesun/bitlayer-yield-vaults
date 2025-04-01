@@ -407,3 +407,59 @@
     )
   )
 )
+
+;; Withdraw funds from a strategy
+(define-public (withdraw (strategy-id uint) (amount uint))
+  (let (
+    (current-time (get-current-time))
+    (user-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+  )
+    ;; Check user has sufficient balance
+    (asserts! (>= user-balance amount) (err err-insufficient-balance))
+    
+    ;; Get strategy info
+    (match (map-get? strategies { strategy-id: strategy-id })
+      strategy-info
+        (let (
+          (withdrawal-fee-bps (get withdrawal-fee strategy-info))
+          (fee-amount (calculate-fee amount withdrawal-fee-bps))
+          (net-amount (- amount fee-amount))
+          (new-user-balance (- user-balance amount))
+          (new-strategy-tvl (- (get tvl strategy-info) amount))
+        )
+          ;; Update strategy TVL
+          (map-set strategies { strategy-id: strategy-id }
+            (merge strategy-info { tvl: new-strategy-tvl })
+          )
+          
+          ;; Update user balance
+          (map-set user-balances { user: tx-sender, strategy: strategy-id } new-user-balance)
+          
+          ;; Update total TVL
+          (var-set total-tvl (- (var-get total-tvl) amount))
+          
+          ;; Add fee to treasury
+          (var-set treasury-balance (+ (var-get treasury-balance) fee-amount))
+          
+          ;; Transfer STX to user
+          (as-contract (stx-transfer? net-amount tx-sender tx-sender))
+          
+          ;; Return success with withdrawal amount
+          (ok net-amount)
+        )
+      (err err-not-found)
+    )
+  )
+)
+
+;; Withdraw all funds from a strategy
+(define-public (withdraw-all (strategy-id uint))
+  (let (
+    (user-balance (default-to u0 (map-get? user-balances { user: tx-sender, strategy: strategy-id })))
+  )
+    (if (> user-balance u0)
+      (withdraw strategy-id user-balance)
+      (err err-insufficient-balance)
+    )
+  )
+)
